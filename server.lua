@@ -146,6 +146,45 @@ AddEventHandler('bankloan:paycheckDeduction', function()
     end
 end)
 
+local CurrentVersion = "v1.0.3" -- Your current version
+local RepoURL = "https://github.com/Bert5580/esx-Bank_Loans" -- Your GitHub repository
+
+-- Helper: Normalize version string (removes 'Q' or 'v' prefixes)
+local function NormalizeVersion(version)
+    return version:gsub("^E", ""):gsub("^v", "")
+end
+
+-- Function: Check for updates from GitHub
+local function CheckForUpdates()
+    PerformHttpRequest(RepoURL .. "/releases/latest", function(err, response, headers)
+        if err == 200 and response then
+            local LatestTag = response:match('"tag_name":"(.-)"') -- Extract latest version tag
+            if LatestTag then
+                local CurrentNormalized = NormalizeVersion(CurrentVersion)
+                local LatestNormalized = NormalizeVersion(LatestTag)
+                if CurrentNormalized ~= LatestNormalized then
+                    print(("[ESX-Bank Loans]: A new version is available! (Current: %s, Latest: %s)"):format(CurrentVersion, LatestTag))
+                    print(("[ESX-Bank Loans]: Download it at: %s/releases/tag/%s"):format(RepoURL, LatestTag))
+                else
+                    print("[ESX-Bank Loans]: You are using the latest version.")
+                end
+            else
+                print("[ESX-Bank Loans]: Unable to fetch the latest version tag. Please check the repository.")
+            end
+        else
+            print(("[ESX-Bank Loans]: Failed to check for updates. HTTP Error: %s"):format(err))
+        end
+    end, "GET", "", {["Accept"] = "application/json"})
+end
+
+-- Trigger the update check on script start
+AddEventHandler('onResourceStart', function(resourceName)
+    if GetCurrentResourceName() == resourceName then
+        print("[ESX-Bank Loans]: Checking for updates...")
+        CheckForUpdates()
+    end
+end)
+
 -- Admin command to clear player debt
 ESX.RegisterCommand('remove_debit', 'admin', function(xPlayer, args)
     local targetId = tonumber(args.playerId)

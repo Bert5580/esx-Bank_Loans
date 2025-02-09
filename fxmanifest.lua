@@ -3,23 +3,27 @@ game 'gta5'
 
 author 'Your Name'
 description 'Bank Loan System with ESX Legacy Integration'
-version '2.1.0'
+version 'Ev1.0.7' -- Updated version prefix for ESX
 
 lua54 'yes'
 
+shared_scripts {
+    'config.lua' -- Ensures shared config access
+}
+
 client_scripts {
-    'config.lua',
     'locales/en.lua',
     'client.lua'
 }
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
-    'config.lua',
     'server.lua'
 }
 
 dependencies {
     'es_extended',
-    'oxmysql'
+    'oxmysql',
+    'esx_menu_default' -- ESX equivalent of qb-menu
+    --'esx_target' -- ESX equivalent of qb-target for NPC interaction
 }

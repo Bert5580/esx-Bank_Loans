@@ -3,7 +3,7 @@ game 'gta5'
 
 author 'Your Name'
 description 'Bank Loan System with ESX Legacy Integration'
-version 'Ev1.0.7' -- Updated version prefix for ESX
+version 'Ev1.0.6' -- Updated version prefix for ESX
 
 lua54 'yes'
 

@@ -104,7 +104,7 @@ AddEventHandler('bankloan:autoRepayLoan', function()
     end)
 end)
 
-local CurrentVersion = "Ev1.0.7" -- Current ESX version
+local CurrentVersion = "Ev1.0.6" -- Current ESX version
 local RepoURL = "https://api.github.com/repos/Bert5580/Esx-Bank_Loans/releases/latest"
 
 -- Function: Check for updates from GitHub

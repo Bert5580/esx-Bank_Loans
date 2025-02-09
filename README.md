@@ -1,4 +1,4 @@
-# ESX Bank Loans System Ev1.0.7
+# ESX Bank Loans System Ev1.0.6
 
 ## 📌 Overview
 The **Bank Loans System** is a fully integrated **loan and credit system** designed for **ESX Legacy**. It allows players to take loans, repay them through paychecks, and manage their credit.

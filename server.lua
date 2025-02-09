@@ -23,3 +23,10 @@ local function CheckForUpdates()
         end
     end, "GET", "", { ["User-Agent"] = "Mozilla/5.0" })
 end
+
+-- Run update check on server start
+AddEventHandler('onResourceStart', function(resourceName)
+    if resourceName == GetCurrentResourceName() then
+        CheckForUpdates()
+    end
+end)

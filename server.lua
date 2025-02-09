@@ -1,63 +1,57 @@
+-- ESX Bank Loans - Server Side Script
 local ESX = nil
 TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 
--- Table to store player loans in memory
 local playerLoans = {}
 
--- Debug print helper function
+-- Debug Print Helper
 local function DebugPrint(message, level)
     if Config.Debug then
-        local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+        local timestamp = "[" .. math.floor(GetGameTimer() / 1000) .. "s]"
         local levels = { info = "[INFO]", warning = "[WARNING]", error = "[ERROR]" }
         local logLevel = levels[level] or "[INFO]"
-        print(string.format("[%s] %s %s", timestamp, logLevel, message))
+        print(string.format("%s %s %s", timestamp, logLevel, message))
     end
 end
 
--- Verify database tables and columns
-local function VerifyDatabase()
-    MySQL.Async.fetchAll("SHOW TABLES LIKE 'player_loans'", {}, function(result)
-        if #result == 0 then
-            DebugPrint("[ERROR] Table 'player_loans' does not exist in the database.", "error")
-        else
-            DebugPrint("[INFO] Table 'player_loans' exists in the database.", "info")
-        end
-    end)
-
-    MySQL.Async.fetchAll("SHOW COLUMNS FROM users LIKE 'credit_score'", {}, function(result)
-        if #result == 0 then
-            DebugPrint("[ERROR] Column 'credit_score' does not exist in the 'users' table.", "error")
-        else
-            DebugPrint("[INFO] Column 'credit_score' exists in the 'users' table.", "info")
-        end
-    end)
-end
-
--- Load player loans into memory
-local function LoadPlayerLoans()
-    MySQL.Async.fetchAll(
-        'SELECT identifier, SUM(total_debt) AS totalDebt, SUM(amount_paid) AS paidDebt FROM player_loans GROUP BY identifier',
-        {},
-        function(results)
-            for _, row in ipairs(results) do
-                playerLoans[row.identifier] = {
-                    totalDebt = row.totalDebt or 0,
-                    paidDebt = row.paidDebt or 0
-                }
+-- Validate database tables before running
+local function ValidateDatabase()
+    MySQL.ready(function()
+        MySQL.Async.fetchAll("SHOW TABLES LIKE 'player_loans'", {}, function(result)
+            if #result == 0 then
+                print("[ERROR] Table 'player_loans' does not exist. Creating table...")
+                MySQL.Async.execute([[CREATE TABLE IF NOT EXISTS player_loans (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    identifier VARCHAR(50) NOT NULL,
+                    loan_amount DOUBLE NOT NULL,
+                    interest_rate DOUBLE NOT NULL DEFAULT 0.05,
+                    total_debt DOUBLE NOT NULL,
+                    amount_paid DOUBLE DEFAULT 0,
+                    date_taken DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_payment DATETIME DEFAULT NULL,
+                    FOREIGN KEY (identifier) REFERENCES users(identifier) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;]])
+            else
+                print("[INFO] Table 'player_loans' verified.")
             end
-            DebugPrint("Player loans loaded successfully.", "info")
-        end
-    )
+        end)
+
+        MySQL.Async.fetchAll("SHOW COLUMNS FROM users LIKE 'credit_score'", {}, function(result)
+            if #result == 0 then
+                print("[ERROR] Column 'credit_score' missing. Adding column...")
+                MySQL.Async.execute("ALTER TABLE users ADD COLUMN credit_score INT DEFAULT 100;")
+            end
+        end)
+    end)
 end
 
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName == GetCurrentResourceName() then
-        VerifyDatabase()
-        LoadPlayerLoans()
+        ValidateDatabase()
     end
 end)
 
--- Get player credit and loans
+-- Fetch Credit & Loans
 RegisterNetEvent('bankloan:getCreditAndLoans')
 AddEventHandler('bankloan:getCreditAndLoans', function()
     local src = source
@@ -65,149 +59,119 @@ AddEventHandler('bankloan:getCreditAndLoans', function()
     if not xPlayer then return end
 
     local identifier = xPlayer.getIdentifier()
-
-    MySQL.Async.fetchScalar('SELECT credit_score FROM users WHERE identifier = ?', { identifier }, function(credit)
-        if not credit then credit = 0 end
-
+    MySQL.Async.fetchScalar('SELECT IFNULL(credit, 0) FROM users WHERE identifier = ?', { identifier }, function(credit)
         MySQL.Async.fetchAll('SELECT * FROM player_loans WHERE identifier = ?', { identifier }, function(loans)
             TriggerClientEvent('bankloan:openLoanMenu', src, credit, loans)
-            DebugPrint(string.format("Sent loan menu data to Player ID %s with Credit: %d", src, credit))
+            DebugPrint(string.format("Sending loan menu data to Player ID %s with Credit: %d", src, credit))
         end)
     end)
 end)
 
--- Grant a loan to the player
-RegisterNetEvent('bankloan:giveLoan')
-AddEventHandler('bankloan:giveLoan', function(loanAmount, interestRate)
+-- New Feature: Loan Balance Notification
+RegisterNetEvent('bankloan:notifyLoanBalance')
+AddEventHandler('bankloan:notifyLoanBalance', function()
     local src = source
     local xPlayer = ESX.GetPlayerFromId(src)
     if not xPlayer then return end
 
-    loanAmount = loanAmount or 0 -- Default loan amount to 0 if nil
-    interestRate = interestRate or 0.05 -- Default interest rate to 5% if nil
-
     local identifier = xPlayer.getIdentifier()
-    local totalDebt = loanAmount * (1 + interestRate)
-
-    MySQL.Async.insert(
-        'INSERT INTO player_loans (identifier, loan_amount, interest_rate, total_debt, amount_paid) VALUES (?, ?, ?, ?, ?)',
-        { identifier, loanAmount, interestRate, totalDebt, 0 },
-        function(insertId)
-            if insertId then
-                xPlayer.addAccountMoney('bank', loanAmount)
-                TriggerClientEvent('esx:showNotification', src, "Loan granted! Amount: $" .. loanAmount)
-                DebugPrint(string.format("Loan successfully granted to Player ID %s. Loan Amount: %.2f, Interest Rate: %.2f%%", src, loanAmount, interestRate * 100), "info")
-            else
-                DebugPrint(string.format("[ERROR] Failed to grant loan for Player ID %s.", src), "error")
-            end
+    MySQL.Async.fetchScalar("SELECT SUM(total_debt - amount_paid) FROM player_loans WHERE identifier = ?", { identifier }, function(debt)
+        if debt and debt > 0 then
+            TriggerClientEvent('esx:showNotification', src, string.format("Your remaining loan balance is: $%.2f", debt))
+        else
+            TriggerClientEvent('esx:showNotification', src, "You have no outstanding loans.")
         end
-    )
+    end)
 end)
 
--- Check remaining debt
-RegisterNetEvent('bankloan:checkDebt')
-AddEventHandler('bankloan:checkDebt', function()
+-- New Feature: Auto Loan Repayment on Paycheck
+RegisterNetEvent('bankloan:autoRepayLoan')
+AddEventHandler('bankloan:autoRepayLoan', function()
     local src = source
     local xPlayer = ESX.GetPlayerFromId(src)
     if not xPlayer then return end
 
     local identifier = xPlayer.getIdentifier()
-    local totalDebt = playerLoans[identifier] and playerLoans[identifier].totalDebt or 0
-    local paidDebt = playerLoans[identifier] and playerLoans[identifier].paidDebt or 0
-
-    TriggerClientEvent('bankloan:displayDebitNotification', src, totalDebt, paidDebt)
-    DebugPrint(string.format("Debt check for Player ID %s. Total Debt: %.2f, Paid Debt: %.2f", src, totalDebt, paidDebt), "info")
-end)
-
--- Deduct paycheck for loan repayment
-RegisterNetEvent('bankloan:paycheckDeduction')
-AddEventHandler('bankloan:paycheckDeduction', function()
-    local src = source
-    local xPlayer = ESX.GetPlayerFromId(src)
-    if not xPlayer then return end
-
-    local identifier = xPlayer.getIdentifier()
-    local loanData = playerLoans[identifier]
-
-    if not loanData or loanData.totalDebt <= loanData.paidDebt then
-        DebugPrint("No outstanding loans for paycheck deduction.", "info")
-        return
-    end
-
     local paycheckAmount = xPlayer.getSalary() or 0
-    local deduction = math.min(paycheckAmount * Config.PaybackPercentage, loanData.totalDebt - loanData.paidDebt)
+    local repaymentAmount = paycheckAmount * Config.PaybackPercentage
 
-    if deduction > 0 then
-        playerLoans[identifier].paidDebt = loanData.paidDebt + deduction
-
-        MySQL.Async.execute('UPDATE player_loans SET amount_paid = amount_paid + ? WHERE identifier = ?', { deduction, identifier })
-        TriggerClientEvent('esx:showNotification', src, string.format("$%.2f deducted from your paycheck for loan repayment.", deduction))
-        DebugPrint(string.format("Paycheck deduction applied for Player ID %s. Deduction: %.2f", src, deduction), "info")
-    end
+    MySQL.Async.fetchScalar("SELECT SUM(total_debt - amount_paid) FROM player_loans WHERE identifier = ?", { identifier }, function(debt)
+        if debt and debt > 0 then
+            local amountToRepay = math.min(repaymentAmount, debt)
+            MySQL.Async.execute("UPDATE player_loans SET amount_paid = amount_paid + ? WHERE identifier = ?", { amountToRepay, identifier })
+            TriggerClientEvent('esx:showNotification', src, string.format("$%.2f has been deducted from your paycheck for loan repayment.", amountToRepay))
+        end
+    end)
 end)
 
-local CurrentVersion = "v1.0.3" -- Your current version
-local RepoURL = "https://github.com/Bert5580/esx-Bank_Loans" -- Your GitHub repository
-
--- Helper: Normalize version string (removes 'Q' or 'v' prefixes)
-local function NormalizeVersion(version)
-    return version:gsub("^E", ""):gsub("^v", "")
-end
+local CurrentVersion = "Ev1.0.7" -- Current ESX version
+local RepoURL = "https://api.github.com/repos/Bert5580/Esx-Bank_Loans/releases/latest"
 
 -- Function: Check for updates from GitHub
 local function CheckForUpdates()
-    PerformHttpRequest(RepoURL .. "/releases/latest", function(err, response, headers)
-        if err == 200 and response then
-            local LatestTag = response:match('"tag_name":"(.-)"') -- Extract latest version tag
-            if LatestTag then
-                local CurrentNormalized = NormalizeVersion(CurrentVersion)
-                local LatestNormalized = NormalizeVersion(LatestTag)
-                if CurrentNormalized ~= LatestNormalized then
-                    print(("[ESX-Bank Loans]: A new version is available! (Current: %s, Latest: %s)"):format(CurrentVersion, LatestTag))
-                    print(("[ESX-Bank Loans]: Download it at: %s/releases/tag/%s"):format(RepoURL, LatestTag))
-                else
-                    print("[ESX-Bank Loans]: You are using the latest version.")
-                end
+    PerformHttpRequest(RepoURL, function(statusCode, response)
+        if statusCode == 200 and response then
+            local LatestVersion = response:match('"tag_name":"(.-)"')
+            if LatestVersion and LatestVersion ~= CurrentVersion then
+                print(string.format(
+                    "[Bank Loans]: \27[33mA new version is available! (Current: %s, Latest: %s)\27[0m",
+                    CurrentVersion, LatestVersion
+                ))
+                print(string.format(
+                    "[Bank Loans]: Download it at: \27[31mhttps://github.com/Bert5580/Esx-Bank_Loans/releases/tag/%s\27[0m",
+                    LatestVersion
+                ))
             else
-                print("[ESX-Bank Loans]: Unable to fetch the latest version tag. Please check the repository.")
+                print("[Bank Loans]: You are using the latest version.")
             end
         else
-            print(("[ESX-Bank Loans]: Failed to check for updates. HTTP Error: %s"):format(err))
+            print("[Bank Loans]: Failed to check for updates. HTTP Error:", statusCode)
         end
-    end, "GET", "", {["Accept"] = "application/json"})
+    end, "GET", "", { ["User-Agent"] = "Mozilla/5.0" })
 end
 
--- Trigger the update check on script start
+-- Run update check on server start
 AddEventHandler('onResourceStart', function(resourceName)
-    if GetCurrentResourceName() == resourceName then
-        print("[ESX-Bank Loans]: Checking for updates...")
+    if resourceName == GetCurrentResourceName() then
         CheckForUpdates()
     end
 end)
 
--- Admin command to clear player debt
-ESX.RegisterCommand('remove_debit', 'admin', function(xPlayer, args)
-    local targetId = tonumber(args.playerId)
-    if not targetId then
-        TriggerClientEvent('esx:showNotification', xPlayer.source, "Invalid Player ID")
+-- New Feature: Grant Loan
+RegisterNetEvent('bankloan:giveLoan')
+AddEventHandler('bankloan:giveLoan', function(amount, interestRate)
+    local src = source
+    local xPlayer = ESX.GetPlayerFromId(src)
+    if not xPlayer then return end
+    
+    local identifier = xPlayer.getIdentifier()
+    local totalDebt = amount * (1 + interestRate)
+    MySQL.Async.insert('INSERT INTO player_loans (identifier, loan_amount, interest_rate, total_debt, amount_paid) VALUES (?, ?, ?, ?, ?)',
+        { identifier, amount, interestRate, totalDebt, 0 }, function(insertId)
+            if insertId then
+                xPlayer.addAccountMoney('bank', amount)
+                TriggerClientEvent('esx:showNotification', src, "Loan granted successfully!")
+            else
+                TriggerClientEvent('esx:showNotification', src, "Loan request failed.")
+            end
+        end)
+end)
+
+-- New Feature: Pay Loan
+RegisterNetEvent('bankloan:payLoan')
+AddEventHandler('bankloan:payLoan', function(paymentAmount)
+    local src = source
+    local xPlayer = ESX.GetPlayerFromId(src)
+    if not xPlayer then return end
+    
+    local identifier = xPlayer.getIdentifier()
+    local bankBalance = xPlayer.getAccount('bank').money
+    if bankBalance < paymentAmount then
+        TriggerClientEvent('esx:showNotification', src, "Insufficient funds.")
         return
     end
-
-    local targetPlayer = ESX.GetPlayerFromId(targetId)
-    if not targetPlayer then
-        TriggerClientEvent('esx:showNotification', xPlayer.source, "Player not found")
-        return
-    end
-
-    local identifier = targetPlayer.getIdentifier()
-    MySQL.Async.execute('DELETE FROM player_loans WHERE identifier = ?', { identifier })
-
-    playerLoans[identifier] = nil
-
-    TriggerClientEvent('esx:showNotification', targetPlayer.source, "Your debt has been cleared.")
-    TriggerClientEvent('esx:showNotification', xPlayer.source, "You have cleared the debt for Player ID: " .. targetId)
-    DebugPrint(string.format("Debt cleared for Player ID %s.", targetId), "info")
-end, false, {
-    help = 'Remove all debt for a player',
-    arguments = { { name = 'playerId', help = 'Player ID', type = 'number' } }
-})
+    
+    xPlayer.removeAccountMoney('bank', paymentAmount)
+    MySQL.Async.execute("UPDATE player_loans SET amount_paid = amount_paid + ? WHERE identifier = ?", { paymentAmount, identifier })
+    TriggerClientEvent('esx:showNotification', src, "Loan payment successful.")
+end)

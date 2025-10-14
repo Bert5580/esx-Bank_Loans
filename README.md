@@ -1,4 +1,4 @@
-# Bank Loans – Ev1.1.4 (QB-Core)
+# Bank Loans – Ev1.1.4 (ESX)
 
 Advanced in-game banking and loan management system for **QB-Core**. Handles player credit, repayments, and admin control, fully database-driven with automatic tracking.
 

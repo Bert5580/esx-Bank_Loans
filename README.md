@@ -1,4 +1,4 @@
-# Bank Loans – Ev1.1.4 (ESX)
+# Bank Loans – Ev1.1.4 (ESX) COMING SOON!!
 
 Advanced in-game banking and loan management system for **ESX**. Handles player credit, repayments, and admin control, fully database-driven with automatic tracking.
 

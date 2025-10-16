@@ -29,7 +29,7 @@
 - Enhanced server-side validation for loan repayment and paycheck deductions.
 
 --------------------------------------------------------
-## Version Ev1.0.5 - [February 12, 2025]
+## Version Ev1.0.4 - [February 12, 2025]
 ### **New Features:**
 - **Fixed Loan Menu Issue**:
   - Players using **esx_menu_default** can now successfully open the loan menu when pressing **[H]**.
@@ -73,6 +73,6 @@ Join our support community or open an issue!
 
 Ev1.1.0 - Schema alignment (identifier VARCHAR(60), DECIMAL(12,2), added status column), blips/NPCs auto-spawn on client start; locales path fixed in manifest.
 
-[2025-10-16] Ev1.1.5
+[2025-10-16] Ev1.1.4
 - Documentation refresh: rewritten README with features, commands (auto-discovered), install & troubleshooting.
 - No code changes; gameplay unchanged vs Ev1.1.5.
